@@ -284,10 +284,20 @@ def process_city(city: dict, start: str, end: str) -> pd.DataFrame:
     return df[EXPECTED_COLUMNS]
 
 
-def main(dry_run: bool) -> None:
+def main(dry_run: bool, force: bool) -> None:
     log.info("=" * 70)
-    log.info("generate_training_data.py  |  dry_run=%s", dry_run)
+    log.info("generate_training_data.py  |  dry_run=%s  force=%s", dry_run, force)
     log.info("=" * 70)
+
+    # Skip if parquet already exists and --force not passed
+    if not dry_run and not force and OUTPUT_PATH.exists():
+        size_mb = OUTPUT_PATH.stat().st_size / 1024 / 1024
+        log.info(
+            "Parquet already exists at %s (%.1f MB). Skipping fetch and processing.",
+            OUTPUT_PATH, size_mb,
+        )
+        log.info("To regenerate from scratch, run with --force.")
+        return
 
     if dry_run:
         start = DRY_START
@@ -344,10 +354,15 @@ if __name__ == "__main__":
         action="store_true",
         help="Fetch 7 days for Berlin only, validate schema, do not write parquet.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-fetch and overwrite existing parquet even if it already exists.",
+    )
     args = parser.parse_args()
 
     try:
-        main(dry_run=args.dry_run)
+        main(dry_run=args.dry_run, force=args.force)
     except KeyboardInterrupt:
         log.warning("Interrupted by user.")
         sys.exit(130)
