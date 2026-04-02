@@ -1,0 +1,29 @@
+# Models (never commit trained weights)
+*.joblib
+models/solar/*.joblib
+
+# Training / generated data
+data/
+*.parquet
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
