@@ -36,7 +36,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE, mode="w", encoding="utf-8"),
+        logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8"),
     ],
 )
 log = logging.getLogger(__name__)
