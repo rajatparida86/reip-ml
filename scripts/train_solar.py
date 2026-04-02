@@ -44,7 +44,7 @@ log = logging.getLogger(__name__)
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
 ROOT = Path(__file__).parent.parent
-DATA_PATH = ROOT / "data" / "berlin_solar_2yr.parquet"
+DATA_PATH = ROOT / "data" / "solar_training.parquet"
 MODEL_DIR = ROOT / "models" / "solar"
 
 MODEL_FILES = {

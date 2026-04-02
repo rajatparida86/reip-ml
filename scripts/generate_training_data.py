@@ -57,10 +57,14 @@ PANEL_TILT = 30.0       # degrees
 PANEL_AZIMUTH = 180.0   # south-facing
 PANEL_CAPACITY_KW = 5000.0  # 5 MW reference system
 
-FULL_START = "2022-01-01"
-FULL_END   = "2023-12-31"
-DRY_START  = "2022-01-01"
-DRY_DAYS   = 7
+FULL_START = "2015-01-01"
+# Open-Meteo archive has a ~5-day lag. Compute end date dynamically so
+# re-running the script always fetches the most recent available data.
+OPEN_METEO_ARCHIVE_LAG_DAYS = 5
+FULL_END = (date.today() - timedelta(days=OPEN_METEO_ARCHIVE_LAG_DAYS)).isoformat()
+
+DRY_START = "2024-01-01"
+DRY_DAYS  = 7
 
 OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
 OPEN_METEO_VARIABLES = [
@@ -70,7 +74,7 @@ OPEN_METEO_VARIABLES = [
     "cloudcover",
 ]
 
-OUTPUT_PATH = Path(__file__).parent.parent / "data" / "berlin_solar_2yr.parquet"
+OUTPUT_PATH = Path(__file__).parent.parent / "data" / "solar_training.parquet"
 
 # ── Open-Meteo fetch ───────────────────────────────────────────────────────────
 
@@ -300,28 +304,44 @@ def main(dry_run: bool, force: bool) -> None:
         return
 
     if dry_run:
-        start = DRY_START
-        end = (date.fromisoformat(DRY_START) + timedelta(days=DRY_DAYS - 1)).isoformat()
+        year_ranges = [(DRY_START, (date.fromisoformat(DRY_START) + timedelta(days=DRY_DAYS - 1)).isoformat())]
         cities = CITIES[:1]  # Berlin only for smoke test
-        log.info("DRY RUN: %s → %s, city: %s only", start, end, cities[0]["name"])
+        log.info("DRY RUN: %s → %s, city: %s only", year_ranges[0][0], year_ranges[0][1], cities[0]["name"])
     else:
-        start, end = FULL_START, FULL_END
+        # Split into per-year chunks: smaller requests = lower timeout risk,
+        # cheaper to retry a single year if one fails.
         cities = CITIES
-        log.info("FULL RUN: %s → %s, %d cities", start, end, len(cities))
+        start_year = date.fromisoformat(FULL_START).year
+        end_date = date.fromisoformat(FULL_END)
+        year_ranges = []
+        for y in range(start_year, end_date.year + 1):
+            y_start = f"{y}-01-01"
+            y_end = min(date(y, 12, 31), end_date).isoformat()
+            year_ranges.append((y_start, y_end))
+        total_years = len(year_ranges)
+        log.info(
+            "FULL RUN: %s → %s | %d cities × %d annual chunks = %d fetches",
+            FULL_START, FULL_END, len(cities), total_years, len(cities) * total_years,
+        )
 
     all_dfs: list[pd.DataFrame] = []
 
     for i, city in enumerate(cities, 1):
         log.info("── City %d/%d: %s ────────────────────────────────────", i, len(cities), city["name"])
-        try:
-            df = process_city(city, start, end)
-            all_dfs.append(df)
-            log.info("[%s] ✓ Processed %d rows", city["name"], len(df))
-        except Exception:
-            log.error("[%s] FAILED — traceback below:", city["name"])
-            log.error(traceback.format_exc())
-            log.error("Aborting. Fix the error above and re-run.")
-            sys.exit(1)
+        city_dfs: list[pd.DataFrame] = []
+        for y_start, y_end in year_ranges:
+            try:
+                df = process_city(city, y_start, y_end)
+                city_dfs.append(df)
+                log.info("[%s] ✓ %s → %s: %d rows", city["name"], y_start, y_end, len(df))
+            except Exception:
+                log.error("[%s] FAILED for %s → %s — traceback below:", city["name"], y_start, y_end)
+                log.error(traceback.format_exc())
+                log.error("Aborting. Fix the error above and re-run.")
+                sys.exit(1)
+        city_total = sum(len(d) for d in city_dfs)
+        all_dfs.extend(city_dfs)
+        log.info("[%s] All years done — %d rows total", city["name"], city_total)
 
     combined = pd.concat(all_dfs, ignore_index=True)
     log.info("Combined dataset: %d rows × %d columns", *combined.shape)
